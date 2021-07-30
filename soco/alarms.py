@@ -7,6 +7,7 @@ from datetime import datetime
 
 from . import discovery
 from .core import PLAY_MODES
+from .exceptions import SoCoException
 from .xml import XML
 
 log = logging.getLogger(__name__)  # pylint: disable=C0103
@@ -46,6 +47,59 @@ def is_valid_recurrence(text):
     if text in ("DAILY", "ONCE", "WEEKDAYS", "WEEKENDS"):
         return True
     return re.search(r"^ON_[0-6]{1,7}$", text) is not None
+
+
+class Alarms:
+    """A class representing all known Sonos Alarms."""
+
+    def __init__(self):
+        self.alarms: dict[int, Alarm] = {}
+        self.last_alarm_list_version: str | None = None
+
+    def __getitem__(self, alarm_id: int):
+        return self.alarms.get(alarm_id)
+
+    def __iter__(self):
+        for alarm in self.alarms.values():
+            yield alarm
+
+    def update(self, zone):
+        """Update all alarms and current version.
+
+        Returns:
+            bool: True if alarms were updated, False if no changes.
+
+        Raises:
+            SoCoException: If the `CurrentAlarmListVersion` value is unexpected.
+        """
+        response = zone.alarmClock.ListAlarms()
+        current_alarm_list_version = response["CurrentAlarmListVersion"]
+
+        if self.last_alarm_list_version:
+            alarm_list_uid, alarm_list_id = current_alarm_list_version.split(":")
+            (
+                last_alarm_list_uid,
+                last_alarm_list_id,
+            ) = self.last_alarm_list_version.split(":")
+
+            if last_alarm_list_uid != alarm_list_uid:
+                raise SoCoException(
+                    "Alarm list UID {} does not match {}".format(
+                        current_alarm_list_version, self.last_alarm_list_version
+                    )
+                )
+
+            if int(alarm_list_id) <= int(last_alarm_list_id):
+                log.debug(
+                    "Alarm list version %s is not newer than %s",
+                    alarm_list_id,
+                    last_alarm_list_id,
+                )
+                return False
+
+        self.last_alarm_list_version = current_alarm_list_version
+        update_alarm_dict(zone, response, self.alarms)
+        return True
 
 
 class Alarm:
@@ -365,3 +419,46 @@ def remove_alarm_by_id(zone, alarm_id):
             return True
 
     return False
+
+
+def update_alarm_dict(zone, xml_response, alarm_dict):
+    alarm_list = xml_response["CurrentAlarmList"]
+    tree = XML.fromstring(alarm_list.encode("utf-8"))
+    alarms = tree.findall("Alarm")
+
+    for alarm in alarms:
+        values = alarm.attrib
+        alarm_id = int(values["ID"])
+
+        instance = alarm_dict.get(alarm_id)
+        if not instance:
+            instance = Alarm(None)
+            instance._alarm_id = alarm_id
+            alarm_dict[alarm_id] = instance
+
+        instance.start_time = datetime.strptime(
+            values["StartTime"], "%H:%M:%S"
+        ).time()  # NB StartTime, not
+        # StartLocalTime, which is used by CreateAlarm
+        instance.duration = (
+            None
+            if values["Duration"] == ""
+            else datetime.strptime(values["Duration"], "%H:%M:%S").time()
+        )
+        instance.recurrence = values["Recurrence"]
+        instance.enabled = values["Enabled"] == "1"
+        instance.zone = next(
+            (z for z in zone.all_zones if z.uid == values["RoomUUID"]), None
+        )
+        # some alarms are not associated to zones -> filter these out
+        if instance.zone is None:
+            continue
+        instance.program_uri = (
+            None
+            if values["ProgramURI"] == "x-rincon-buzzer:0"
+            else values["ProgramURI"]
+        )
+        instance.program_metadata = values["ProgramMetaData"]
+        instance.play_mode = values["PlayMode"]
+        instance.volume = values["Volume"]
+        instance.include_linked_zones = values["IncludeLinkedZones"] == "1"
