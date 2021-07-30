@@ -54,7 +54,19 @@ class Alarms:
 
     def __init__(self):
         self.alarms: dict[int, Alarm] = {}
-        self.last_alarm_list_version: str | None = None
+        self._last_alarm_list_version: str | None = None
+        self.last_uid: str | None = None
+        self.last_id: int = 0
+
+    @property
+    def last_alarm_list_version(self):
+        return self._last_alarm_list_version
+
+    @last_alarm_list_version.setter
+    def last_alarm_list_version(self, alarm_list_version):
+        self.last_uid, last_id = alarm_list_version.split(":")
+        self.last_id = int(last_id)
+        self._last_alarm_list_version = alarm_list_version
 
     def __getitem__(self, alarm_id: int):
         return self.alarms.get(alarm_id)
@@ -77,23 +89,18 @@ class Alarms:
 
         if self.last_alarm_list_version:
             alarm_list_uid, alarm_list_id = current_alarm_list_version.split(":")
-            (
-                last_alarm_list_uid,
-                last_alarm_list_id,
-            ) = self.last_alarm_list_version.split(":")
-
-            if last_alarm_list_uid != alarm_list_uid:
+            if self.last_uid != alarm_list_uid:
                 raise SoCoException(
                     "Alarm list UID {} does not match {}".format(
                         current_alarm_list_version, self.last_alarm_list_version
                     )
                 )
 
-            if int(alarm_list_id) <= int(last_alarm_list_id):
+            if int(alarm_list_id) <= self.last_id:
                 log.debug(
                     "Alarm list version %s is not newer than %s",
                     alarm_list_id,
-                    last_alarm_list_id,
+                    self.last_id,
                 )
                 return False
 
