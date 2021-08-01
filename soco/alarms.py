@@ -49,17 +49,11 @@ def is_valid_recurrence(text):
     return re.search(r"^ON_[0-6]{1,7}$", text) is not None
 
 
-class Singleton(type):
-    _instances = {}
-
-    def __call__(cls, *args, **kwargs):
-        if cls not in cls._instances:
-            cls._instances[cls] = super(Singleton, cls).__call__(*args, **kwargs)
-        return cls._instances[cls]
-
-
-class Alarms(metaclass=Singleton):
+class Alarms:
     """A class representing all known Sonos Alarms."""
+
+
+
 
     def __init__(self):
         self.alarms: dict[int, Alarm] = {}
@@ -84,7 +78,7 @@ class Alarms(metaclass=Singleton):
         for alarm in self.alarms.values():
             yield alarm
 
-    def update(self, zone):
+    def update(self, zone=None):
         """Update all alarms and current version.
 
         Returns:
@@ -93,6 +87,9 @@ class Alarms(metaclass=Singleton):
         Raises:
             SoCoException: If the `CurrentAlarmListVersion` value is unexpected.
         """
+        if zone is None:
+            zone = discovery.any_soco()
+
         response = zone.alarmClock.ListAlarms()
         current_alarm_list_version = response["CurrentAlarmListVersion"]
 
@@ -115,63 +112,9 @@ class Alarms(metaclass=Singleton):
 
         self.last_alarm_list_version = current_alarm_list_version
 
-        alarm_list = response["CurrentAlarmList"]
-        tree = XML.fromstring(alarm_list.encode("utf-8"))
-
-        # An alarm list looks like this:
-        # <Alarms>
-        #     <Alarm ID="14" StartTime="07:00:00"
-        #         Duration="02:00:00" Recurrence="DAILY" Enabled="1"
-        #         RoomUUID="RINCON_000ZZZZZZ1400"
-        #         ProgramURI="x-rincon-buzzer:0" ProgramMetaData=""
-        #         PlayMode="SHUFFLE_NOREPEAT" Volume="25"
-        #         IncludeLinkedZones="0"/>
-        #     <Alarm ID="15" StartTime="07:00:00"
-        #         Duration="02:00:00" Recurrence="DAILY" Enabled="1"
-        #         RoomUUID="RINCON_000ZZZZZZ01400"
-        #         ProgramURI="x-rincon-buzzer:0" ProgramMetaData=""
-        #         PlayMode="SHUFFLE_NOREPEAT" Volume="25"
-        #          IncludeLinkedZones="0"/>
-        # </Alarms>
-
-        alarms = tree.findall("Alarm")
-
-        for alarm in alarms:
-            values = alarm.attrib
-            alarm_id = int(values["ID"])
-
-            instance = self.alarms.get(alarm_id)
-            if not instance:
-                instance = Alarm(None)
-                instance._alarm_id = alarm_id
-                self.alarms[alarm_id] = instance
-
-            instance.start_time = datetime.strptime(
-                values["StartTime"], "%H:%M:%S"
-            ).time()  # NB StartTime, not
-            # StartLocalTime, which is used by CreateAlarm
-            instance.duration = (
-                None
-                if values["Duration"] == ""
-                else datetime.strptime(values["Duration"], "%H:%M:%S").time()
-            )
-            instance.recurrence = values["Recurrence"]
-            instance.enabled = values["Enabled"] == "1"
-            instance.zone = next(
-                (z for z in zone.all_zones if z.uid == values["RoomUUID"]), None
-            )
-            # some alarms are not associated to zones -> filter these out
-            if instance.zone is None:
-                continue
-            instance.program_uri = (
-                None
-                if values["ProgramURI"] == "x-rincon-buzzer:0"
-                else values["ProgramURI"]
-            )
-            instance.program_metadata = values["ProgramMetaData"]
-            instance.play_mode = values["PlayMode"]
-            instance.volume = values["Volume"]
-            instance.include_linked_zones = values["IncludeLinkedZones"] == "1"
+        alarms = parse_alarm_payload(response, zone)
+        self.alarms = {alarm._alarm_id: alarm for alarm in alarms}
+        return True
 
 
 class Alarm:
@@ -401,10 +344,9 @@ def get_alarms(zone=None):
         set: A set of `Alarm` instances
 
     Note:
-        Any existing `Alarm` instance will have its attributes updated to those
-        currently stored on the Sonos system.
+        This method is deprecated.
     """
-    # Get a soco instance to query. It doesn't matter which.
+    log.warning("get_alarms() is deprecated and should be replaced with a persistent `Alarms` instance")
     if zone is None:
         zone = discovery.any_soco()
     alarms = Alarms()
@@ -430,3 +372,67 @@ def remove_alarm_by_id(zone, alarm_id):
             return True
 
     return False
+
+
+def parse_alarm_payload(payload, zone):
+    """Parse the XML payload response and return a set of `Alarm` instances."""
+    new_alarms = set()
+
+    alarm_list = payload["CurrentAlarmList"]
+    tree = XML.fromstring(alarm_list.encode("utf-8"))
+
+    # An alarm list looks like this:
+    # <Alarms>
+    #     <Alarm ID="14" StartTime="07:00:00"
+    #         Duration="02:00:00" Recurrence="DAILY" Enabled="1"
+    #         RoomUUID="RINCON_000ZZZZZZ1400"
+    #         ProgramURI="x-rincon-buzzer:0" ProgramMetaData=""
+    #         PlayMode="SHUFFLE_NOREPEAT" Volume="25"
+    #         IncludeLinkedZones="0"/>
+    #     <Alarm ID="15" StartTime="07:00:00"
+    #         Duration="02:00:00" Recurrence="DAILY" Enabled="1"
+    #         RoomUUID="RINCON_000ZZZZZZ01400"
+    #         ProgramURI="x-rincon-buzzer:0" ProgramMetaData=""
+    #         PlayMode="SHUFFLE_NOREPEAT" Volume="25"
+    #          IncludeLinkedZones="0"/>
+    # </Alarms>
+
+    alarms = tree.findall("Alarm")
+
+    for alarm in alarms:
+        values = alarm.attrib
+        alarm_id = int(values["ID"])
+
+        new_alarm = Alarm(None)
+        new_alarm._alarm_id = alarm_id
+
+        new_alarm.zone = next(
+            (z for z in zone.all_zones if z.uid == values["RoomUUID"]), None
+        )
+        # some alarms are not associated to zones -> filter these out
+        if new_alarm.zone is None:
+            continue
+
+        new_alarm.start_time = datetime.strptime(
+            values["StartTime"], "%H:%M:%S"
+        ).time()  # NB StartTime, not
+        # StartLocalTime, which is used by CreateAlarm
+        new_alarm.duration = (
+            None
+            if values["Duration"] == ""
+            else datetime.strptime(values["Duration"], "%H:%M:%S").time()
+        )
+        new_alarm.recurrence = values["Recurrence"]
+        new_alarm.enabled = values["Enabled"] == "1"
+        new_alarm.program_uri = (
+            None
+            if values["ProgramURI"] == "x-rincon-buzzer:0"
+            else values["ProgramURI"]
+        )
+        new_alarm.program_metadata = values["ProgramMetaData"]
+        new_alarm.play_mode = values["PlayMode"]
+        new_alarm.volume = values["Volume"]
+        new_alarm.include_linked_zones = values["IncludeLinkedZones"] == "1"
+        new_alarms.add(new_alarm)
+
+    return new_alarms
