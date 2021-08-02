@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 import re
 from datetime import datetime
-from typing import Any
+from typing import Any, Iterable
 
 from . import discovery
 from .core import _SocoSingletonBase, PLAY_MODES, SoCo
@@ -90,6 +90,8 @@ class Alarms(_SocoSingletonBase):
         {}
     """
 
+    _class_group = "Alarms"
+
     def __init__(self) -> None:
         """Initialize the instance."""
         self.alarms: dict[int, Alarm] = {}
@@ -114,7 +116,7 @@ class Alarms(_SocoSingletonBase):
         """Return the alarm by ID."""
         return self.alarms.get(alarm_id)
 
-    def __iter__(self):
+    def __iter__(self) -> Iterable:
         """Return an interator for all alarms."""
         for alarm in list(self.alarms.values()):
             yield alarm
@@ -181,6 +183,7 @@ class Alarms(_SocoSingletonBase):
         for alarm_id in list(self.alarms):
             if not new_alarms.get(alarm_id):
                 self.alarms.pop(alarm_id)
+
 
 class Alarm:
 
@@ -404,7 +407,7 @@ def remove_alarm_by_id(zone, alarm_id: int) -> bool:  # pylint: disable=unused-a
     return alarms.remove_by_id(alarm_id)
 
 
-def parse_alarm_payload(payload: str, zone: SoCo) -> dict[int: dict[str: Any]]:
+def parse_alarm_payload(payload: str, zone: SoCo) -> dict[int : dict[str:Any]]:
     """Parse the XML payload response and return a dict of `Alarm` kwargs."""
     alarm_list = payload["CurrentAlarmList"]
     tree = XML.fromstring(alarm_list.encode("utf-8"))
