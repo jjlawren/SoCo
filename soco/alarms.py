@@ -14,7 +14,7 @@ log = logging.getLogger(__name__)  # pylint: disable=C0103
 TIME_FORMAT = "%H:%M:%S"
 
 
-def is_valid_recurrence(text):
+def is_valid_recurrence(text) -> bool:
     """Check that ``text`` is a valid recurrence string.
 
     A valid recurrence string is  ``DAILY``, ``ONCE``, ``WEEKDAYS``,
@@ -89,7 +89,7 @@ class Alarms(_SocoSingletonBase):
         {}
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the instance."""
         self.alarms: dict[int, Alarm] = {}
         self._last_zone_used: SoCo | None = None
@@ -98,7 +98,7 @@ class Alarms(_SocoSingletonBase):
         self.last_id: int = 0
 
     @property
-    def last_alarm_list_version(self):
+    def last_alarm_list_version(self) -> str:
         """Return last seen alarm list version."""
         return self._last_alarm_list_version
 
@@ -109,7 +109,7 @@ class Alarms(_SocoSingletonBase):
         self.last_id = int(last_id)
         self._last_alarm_list_version = alarm_list_version
 
-    def __getitem__(self, alarm_id: int):
+    def __getitem__(self, alarm_id: int) -> Alarm:
         """Return the alarm by ID."""
         return self.alarms.get(alarm_id)
 
@@ -118,7 +118,7 @@ class Alarms(_SocoSingletonBase):
         for alarm in list(self.alarms.values()):
             yield alarm
 
-    def remove_by_id(self, alarm_id: int):
+    def remove_by_id(self, alarm_id: int) -> bool:
         """Remove an alarm using its identifier.
 
         Returns:
@@ -131,7 +131,7 @@ class Alarms(_SocoSingletonBase):
         alarm.remove()
         return True
 
-    def update(self, zone: SoCo | None = None):
+    def update(self, zone: SoCo | None = None) -> None:
         """Update all alarms and current alarm list version.
 
         Raises:
@@ -198,7 +198,7 @@ class Alarm:
         play_mode: str = "NORMAL",
         volume: int = 20,
         include_linked_zones: bool = False,
-    ):
+    ) -> None:
         """
         Args:
             zone (`SoCo`): The soco instance which will play the alarm.
@@ -244,13 +244,13 @@ class Alarm:
         self.include_linked_zones = include_linked_zones
         self.alarm_id = None
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         middle = str(self.start_time.strftime(TIME_FORMAT))
         return "<{} id:{}@{} at {}>".format(
             self.__class__.__name__, self.alarm_id, middle, hex(id(self))
         )
 
-    def __eq__(self, other: object):
+    def __eq__(self, other: object) -> bool:
         if not isinstance(other, Alarm):
             return NotImplemented
 
@@ -272,7 +272,7 @@ class Alarm:
         return True
 
     @property
-    def play_mode(self):
+    def play_mode(self) -> str:
         """
         `str`: The play mode for the alarm.
 
@@ -290,7 +290,7 @@ class Alarm:
         self._play_mode = play_mode
 
     @property
-    def volume(self):
+    def volume(self) -> int:
         """`int`: The alarm's volume (0-100)."""
         return self._volume
 
@@ -302,7 +302,7 @@ class Alarm:
         self._volume = max(0, min(volume, 100))  # Coerce in range
 
     @property
-    def recurrence(self):
+    def recurrence(self) -> str:
         """`str`: How often the alarm should be triggered.
 
         Can be ``DAILY``, ``ONCE``, ``WEEKDAYS``, ``WEEKENDS`` or of the form
@@ -379,7 +379,7 @@ class Alarm:
         return result
 
 
-def get_alarms(zone: SoCo | None = None):
+def get_alarms(zone: SoCo | None = None) -> list[Alarm]:
     """Get a list of all alarms known to the Sonos system.
 
     Args:
@@ -394,7 +394,7 @@ def get_alarms(zone: SoCo | None = None):
     return list(alarms.alarms.values())
 
 
-def remove_alarm_by_id(zone, alarm_id: int):  # pylint: disable=unused-argument
+def remove_alarm_by_id(zone, alarm_id: int) -> bool:  # pylint: disable=unused-argument
     """Remove an alarm from the Sonos system by its ID.
 
     Args:
@@ -406,7 +406,7 @@ def remove_alarm_by_id(zone, alarm_id: int):  # pylint: disable=unused-argument
         bool: `True` if the alarm is found and removed, `False` otherwise.
     """
     log.warning(
-        "remove_alarm_by_id() is deprecated and replaced by `Alarms.remove_by_id()`"
+        "remove_alarm_by_id() is deprecated and replaced by Alarms.remove_by_id()"
     )
     alarms = Alarms()
     return alarms.remove_by_id(alarm_id)
