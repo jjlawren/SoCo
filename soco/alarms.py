@@ -443,36 +443,36 @@ def parse_alarm_payload(payload: str, zone: SoCo):
         values = alarm.attrib
         alarm_id = int(values["ID"])
 
-        instance = Alarm(None)
-        instance.alarm_id = alarm_id
-
-        instance.zone = next(
+        args = {}
+        args["zone"] = next(
             (z for z in zone.all_zones if z.uid == values["RoomUUID"]), None
         )
-        # some alarms are not associated to zones -> filter these out
-        if instance.zone is None:
+        if args["zone"] is None:
+            # Some alarms are not associated to a zone, ignore these
             continue
 
-        instance.start_time = datetime.strptime(
+        args["start_time"] = datetime.strptime(
             values["StartTime"], "%H:%M:%S"
-        ).time()  # NB StartTime, not
-        # StartLocalTime, which is used by CreateAlarm
-        instance.duration = (
+        ).time()  # StartTime not StartLocalTime which is used by CreateAlarm
+        args["duration"] = (
             None
             if values["Duration"] == ""
             else datetime.strptime(values["Duration"], "%H:%M:%S").time()
         )
-        instance.recurrence = values["Recurrence"]
-        instance.enabled = values["Enabled"] == "1"
-        instance.program_uri = (
+        args["recurrence"] = values["Recurrence"]
+        args["enabled"] = values["Enabled"] == "1"
+        args["program_uri"] = (
             None
             if values["ProgramURI"] == "x-rincon-buzzer:0"
             else values["ProgramURI"]
         )
-        instance.program_metadata = values["ProgramMetaData"]
-        instance.play_mode = values["PlayMode"]
-        instance.volume = values["Volume"]
-        instance.include_linked_zones = values["IncludeLinkedZones"] == "1"
+        args["program_metadata"] = values["ProgramMetaData"]
+        args["play_mode"] = values["PlayMode"]
+        args["volume"] = values["Volume"]
+        args["include_linked_zones"] = values["IncludeLinkedZones"] == "1"
 
-        result.append(instance)
+        new_alarm = Alarm(**args)
+        new_alarm.alarm_id = alarm_id
+
+        result.append(new_alarm)
     return result
