@@ -258,6 +258,8 @@ class Alarm:
         for attr, value in kwargs.items():
             if not hasattr(self, attr):
                 raise SoCoException("Alarm does not have atttribute {}".format(attr))
+            if attr == "alarm_id":
+                raise SoCoException("Alarm.alarm_id cannot be modified")
             setattr(self, attr, value)
 
     def __repr__(self) -> str:
