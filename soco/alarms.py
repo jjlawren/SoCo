@@ -115,25 +115,18 @@ class Alarms(_SocoSingletonBase):
         self.last_id = int(last_id)
         self._last_alarm_list_version = alarm_list_version
 
-    def __getitem__(self, alarm_id: int) -> Alarm:
-        """Return the alarm by ID."""
-        return self.alarms.get(alarm_id)
-
     def __iter__(self) -> Iterable:
         """Return an interator for all alarms."""
         for alarm in list(self.alarms.values()):
             yield alarm
 
-    def remove_by_id(self, alarm_id: int) -> bool:
-        """Remove an alarm using its identifier.
+    def __getitem__(self, alarm_id: int) -> Alarm:
+        """Return the alarm by ID."""
+        return self.alarms[alarm_id]
 
-        Returns:
-            bool: True if alarm is found and removed, False otherwise.
-        """
-        alarm = self.alarms.get(alarm_id)
-        if not alarm:
-            return False
-        return alarm.remove()
+    def get(self, alarm_id: int) -> Alarm | None:
+        """Return the alarm by ID or None."""
+        return self.alarms.get(alarm_id)
 
     def update(self, zone: SoCo | None = None) -> None:
         """Update all alarms and current alarm list version.
@@ -394,7 +387,7 @@ def get_alarms(zone: SoCo | None = None) -> set[Alarm]:
     return set(alarms.alarms.values())
 
 
-def remove_alarm_by_id(zone, alarm_id: int) -> bool:  # pylint: disable=unused-argument
+def remove_alarm_by_id(zone: SoCo, alarm_id: int) -> bool:
     """Remove an alarm from the Sonos system by its ID.
 
     Args:
@@ -405,11 +398,12 @@ def remove_alarm_by_id(zone, alarm_id: int) -> bool:  # pylint: disable=unused-a
     Returns:
         bool: `True` if the alarm is found and removed, `False` otherwise.
     """
-    log.warning(
-        "remove_alarm_by_id() is deprecated and replaced by Alarms.remove_by_id()"
-    )
     alarms = Alarms()
-    return alarms.remove_by_id(alarm_id)
+    alarms.update(zone)
+    alarm = alarms.get(alarm_id)
+    if not alarm:
+        return False
+    return alarm.remove()
 
 
 def parse_alarm_payload(payload: str, zone: SoCo) -> dict[int : dict[str:Any]]:
