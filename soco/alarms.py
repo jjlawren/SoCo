@@ -257,7 +257,7 @@ class Alarm:
         """Update an existing Alarm instance using the same arguments as __init__."""
         for attr, value in kwargs.items():
             if not hasattr(self, attr):
-                raise SoCoException(f"Alarm does not have atttribute {attr}")
+                raise SoCoException("Alarm does not have atttribute {}".format(attr))
             setattr(self, attr, value)
 
     def __repr__(self) -> str:
@@ -350,7 +350,7 @@ class Alarm:
             self.alarm_id = int(response["AssignedID"])
             alarms = Alarms()
             if alarms.last_id == self.alarm_id - 1:
-                alarms.last_alarm_list_version = f"{alarms.last_uid}:{self.alarm_id}"
+                alarms.last_alarm_list_version = "{}:{}".format(alarms.last_uid, self.alarm_id)
             alarms.alarms[self.alarm_id] = self
         else:
             # The alarm has been saved before. Update it instead.
@@ -375,14 +375,14 @@ class Alarm:
 
 
 def get_alarms(zone: SoCo | None = None) -> set[Alarm]:
-    """Get a list of all alarms known to the Sonos system.
+    """Get a set of all alarms known to the Sonos system.
 
     Args:
         zone (soco.SoCo, optional): a SoCo instance to query. If None, a random
             instance is used. Defaults to `None`.
 
     Returns:
-        list: A list of `Alarm` instances
+        set: A set of all known `Alarm` instances.
     """
     alarms = Alarms()
     alarms.update(zone)
