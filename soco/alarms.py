@@ -438,33 +438,34 @@ def parse_alarm_payload(payload: str, zone: SoCo) -> dict[int : dict[str:Any]]:
         values = alarm.attrib
         alarm_id = int(values["ID"])
 
-        args = {}
-        args["zone"] = next(
+        alarm_zone = next(
             (z for z in zone.all_zones if z.uid == values["RoomUUID"]), None
         )
-        if args["zone"] is None:
-            # Some alarms are not associated to a zone, ignore these
+        if alarm_zone is None:
+            # Some alarms are not associated with a zone, ignore these
             continue
 
-        args["start_time"] = datetime.strptime(
-            values["StartTime"], "%H:%M:%S"
-        ).time()  # StartTime not StartLocalTime which is used by CreateAlarm
-        args["duration"] = (
-            None
-            if values["Duration"] == ""
-            else datetime.strptime(values["Duration"], "%H:%M:%S").time()
-        )
-        args["recurrence"] = values["Recurrence"]
-        args["enabled"] = values["Enabled"] == "1"
-        args["program_uri"] = (
-            None
-            if values["ProgramURI"] == "x-rincon-buzzer:0"
-            else values["ProgramURI"]
-        )
-        args["program_metadata"] = values["ProgramMetaData"]
-        args["play_mode"] = values["PlayMode"]
-        args["volume"] = values["Volume"]
-        args["include_linked_zones"] = values["IncludeLinkedZones"] == "1"
+        args = {
+            "zone": alarm_zone,
+            # StartTime not StartLocalTime which is used by CreateAlarm
+            "start_time": datetime.strptime(values["StartTime"], "%H:%M:%S").time(),
+            "duration": (
+                None
+                if values["Duration"] == ""
+                else datetime.strptime(values["Duration"], "%H:%M:%S").time()
+            ),
+            "recurrence": values["Recurrence"],
+            "enabled": values["Enabled"] == "1",
+            "program_uri": (
+                None
+                if values["ProgramURI"] == "x-rincon-buzzer:0"
+                else values["ProgramURI"]
+            ),
+            "program_metadata": values["ProgramMetaData"],
+            "play_mode": values["PlayMode"],
+            "volume": values["Volume"],
+            "include_linked_zones": values["IncludeLinkedZones"] == "1",
+        }
 
         result[alarm_id] = args
     return result
