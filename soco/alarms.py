@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import re
 from datetime import datetime
+from typing import Any
 
 from . import discovery
 from .core import _SocoSingletonBase, PLAY_MODES, SoCo
@@ -166,10 +167,15 @@ class Alarms(_SocoSingletonBase):
 
         new_alarms = parse_alarm_payload(response, zone)
 
-        # Replace Alarm objects if updated
-        for alarm_id in new_alarms:
-            if new_alarms[alarm_id] != self.alarms.get(alarm_id):
-                self.alarms[alarm_id] = new_alarms[alarm_id]
+        # Update existing and create new Alarm instances
+        for alarm_id, kwargs in new_alarms.items():
+            existing_alarm = self.alarms.get(alarm_id)
+            if existing_alarm:
+                existing_alarm.update(**kwargs)
+            else:
+                new_alarm = Alarm(**kwargs)
+                new_alarm.alarm_id = alarm_id
+                self.alarms[alarm_id] = new_alarm
 
         # Prune alarms removed externally
         for alarm_id in list(self.alarms):
@@ -243,6 +249,13 @@ class Alarm:
         self._volume = volume
         self.include_linked_zones = include_linked_zones
         self.alarm_id = None
+
+    def update(self, **kwargs) -> None:
+        """Update an existing Alarm instance using the same arguments as __init__."""
+        for attr, value in kwargs.items():
+            if not hasattr(self, attr):
+                raise SoCoException(f"Alarm does not have atttribute {attr}")
+            setattr(self, attr, value)
 
     def __repr__(self) -> str:
         middle = str(self.start_time.strftime(TIME_FORMAT))
@@ -412,8 +425,8 @@ def remove_alarm_by_id(zone, alarm_id: int) -> bool:  # pylint: disable=unused-a
     return alarms.remove_by_id(alarm_id)
 
 
-def parse_alarm_payload(payload: str, zone: SoCo) -> dict[int: Alarm]:
-    """Parse the XML payload response and return a list of `Alarm` instances."""
+def parse_alarm_payload(payload: str, zone: SoCo) -> dict[int: dict[str: Any]]:
+    """Parse the XML payload response and return a dict of `Alarm` kwargs."""
     alarm_list = payload["CurrentAlarmList"]
     tree = XML.fromstring(alarm_list.encode("utf-8"))
 
@@ -467,8 +480,5 @@ def parse_alarm_payload(payload: str, zone: SoCo) -> dict[int: Alarm]:
         args["volume"] = values["Volume"]
         args["include_linked_zones"] = values["IncludeLinkedZones"] == "1"
 
-        new_alarm = Alarm(**args)
-        new_alarm.alarm_id = alarm_id
-
-        result[alarm_id] = new_alarm
+        result[alarm_id] = args
     return result
