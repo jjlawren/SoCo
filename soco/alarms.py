@@ -320,11 +320,11 @@ class Alarm:
 
         self._recurrence = recurrence
 
-    def save(self):
+    def save(self) -> int | None:
         """Save the alarm to the Sonos system.
 
         Returns:
-            str: The alarm ID, or `None` if no alarm was saved.
+            int: The alarm ID, or `None` if no alarm was saved.
 
         Raises:
             ~soco.exceptions.SoCoUPnPException: if the alarm cannot be created
@@ -363,16 +363,20 @@ class Alarm:
             self.zone.alarmClock.UpdateAlarm(args)
         return self.alarm_id
 
-    def remove(self):
+    def remove(self) -> bool:
         """Remove the alarm from the Sonos system.
 
         There is no need to call `save`. The Python instance is not deleted,
         and can be saved back to Sonos again if desired.
+
+        Returns:
+            bool: If the removal was sucessful.
         """
-        self.zone.alarmClock.DestroyAlarm([("ID", self.alarm_id)])
+        result = self.zone.alarmClock.DestroyAlarm([("ID", self.alarm_id)])
         alarms = Alarms()
         alarms.alarms.pop(self.alarm_id, None)
         self.alarm_id = None
+        return result
 
 
 def get_alarms(zone: SoCo | None = None):
