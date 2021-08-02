@@ -263,27 +263,6 @@ class Alarm:
             self.__class__.__name__, self.alarm_id, middle, hex(id(self))
         )
 
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, Alarm):
-            return NotImplemented
-
-        for attr in [
-            "alarm_id",
-            "enabled",
-            "duration",
-            "include_linked_zones",
-            "play_mode",
-            "program_uri",
-            "program_metadata",
-            "recurrence",
-            "start_time",
-            "volume",
-            "zone",
-        ]:
-            if getattr(self, attr) != getattr(other, attr):
-                return False
-        return True
-
     @property
     def play_mode(self) -> str:
         """
@@ -392,7 +371,7 @@ class Alarm:
         return result
 
 
-def get_alarms(zone: SoCo | None = None) -> list[Alarm]:
+def get_alarms(zone: SoCo | None = None) -> set[Alarm]:
     """Get a list of all alarms known to the Sonos system.
 
     Args:
@@ -404,7 +383,7 @@ def get_alarms(zone: SoCo | None = None) -> list[Alarm]:
     """
     alarms = Alarms()
     alarms.update(zone)
-    return list(alarms.alarms.values())
+    return set(alarms.alarms.values())
 
 
 def remove_alarm_by_id(zone, alarm_id: int) -> bool:  # pylint: disable=unused-argument
