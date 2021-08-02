@@ -58,9 +58,6 @@ class Alarms(_SocoSingletonBase):
 
         >>> alarms = Alarms()
         >>> alarms.update()
-        True
-        >>> alarms.update()
-        False
         >>> alarms.alarms
         {469: <Alarm id:469@22:07:41 at 0x7f5198797dc0>,
          470: <Alarm id:470@22:07:46 at 0x7f5198797d60>}
@@ -134,10 +131,7 @@ class Alarms(_SocoSingletonBase):
         return True
 
     def update(self, zone: SoCo | None = None):
-        """Update all alarms and current version.
-
-        Returns:
-            bool: True if alarms were updated, False if no changes.
+        """Update all alarms and current alarm list version.
 
         Raises:
             SoCoException: If the `CurrentAlarmListVersion` value is unexpected.
@@ -163,28 +157,22 @@ class Alarms(_SocoSingletonBase):
                     )
 
             if int(alarm_list_id) <= self.last_id:
-                return False
+                return
 
         self.last_alarm_list_version = current_alarm_list_version
 
-        alarms_updated = False
         alarms = parse_alarm_payload(response, zone)
 
         # Replace Alarm objects if updated
         for alarm in alarms:
             if alarm != self.alarms.get(alarm.alarm_id):
                 self.alarms[alarm.alarm_id] = alarm
-                alarms_updated = True
 
         # Prune alarms removed externally
         for alarm_id in list(self.alarms):
             match = next((a for a in alarms if a.alarm_id == alarm_id), None)
             if not match:
                 self.alarms.pop(alarm_id)
-                alarms_updated = True
-
-        return alarms_updated
-
 
 class Alarm:
 
