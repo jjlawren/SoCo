@@ -164,17 +164,16 @@ class Alarms(_SocoSingletonBase):
 
         self.last_alarm_list_version = current_alarm_list_version
 
-        alarms = parse_alarm_payload(response, zone)
+        new_alarms = parse_alarm_payload(response, zone)
 
         # Replace Alarm objects if updated
-        for alarm in alarms:
-            if alarm != self.alarms.get(alarm.alarm_id):
-                self.alarms[alarm.alarm_id] = alarm
+        for alarm_id in new_alarms:
+            if new_alarms[alarm_id] != self.alarms.get(alarm_id):
+                self.alarms[alarm_id] = new_alarms[alarm_id]
 
         # Prune alarms removed externally
         for alarm_id in list(self.alarms):
-            match = next((a for a in alarms if a.alarm_id == alarm_id), None)
-            if not match:
+            if not new_alarms.get(alarm_id):
                 self.alarms.pop(alarm_id)
 
 class Alarm:
@@ -409,7 +408,7 @@ def remove_alarm_by_id(zone, alarm_id: int):  # pylint: disable=unused-argument
     return alarms.remove_by_id(alarm_id)
 
 
-def parse_alarm_payload(payload: str, zone: SoCo):
+def parse_alarm_payload(payload: str, zone: SoCo) -> dict[int: Alarm]:
     """Parse the XML payload response and return a list of `Alarm` instances."""
     alarm_list = payload["CurrentAlarmList"]
     tree = XML.fromstring(alarm_list.encode("utf-8"))
@@ -431,7 +430,7 @@ def parse_alarm_payload(payload: str, zone: SoCo):
     # </Alarms>
 
     alarms = tree.findall("Alarm")
-    result = []
+    result = {}
     for alarm in alarms:
         values = alarm.attrib
         alarm_id = int(values["ID"])
@@ -467,5 +466,5 @@ def parse_alarm_payload(payload: str, zone: SoCo):
         new_alarm = Alarm(**args)
         new_alarm.alarm_id = alarm_id
 
-        result.append(new_alarm)
+        result[alarm_id] = new_alarm
     return result
