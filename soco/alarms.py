@@ -92,6 +92,7 @@ class Alarms(_SocoSingletonBase):
     def __init__(self):
         """Initialize the instance."""
         self.alarms: dict[int, Alarm] = {}
+        self._last_zone_used: SoCo | None = None
         self._last_alarm_list_version: str | None = None
         self.last_uid: str | None = None
         self.last_id: int = 0
@@ -138,7 +139,9 @@ class Alarms(_SocoSingletonBase):
                 May occur if the provided zone is from a different household.
         """
         if zone is None:
-            zone = discovery.any_soco()
+            zone = self._last_zone_used or discovery.any_soco()
+
+        self._last_zone_used = zone
 
         response = zone.alarmClock.ListAlarms()
         current_alarm_list_version = response["CurrentAlarmListVersion"]
