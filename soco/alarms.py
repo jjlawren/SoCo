@@ -355,6 +355,8 @@ class Alarm:
             response = self.zone.alarmClock.CreateAlarm(args)
             self.alarm_id = int(response["AssignedID"])
             alarms = Alarms()
+            if alarms.last_id == self.alarm_id - 1:
+                alarms.last_alarm_list_version = f"{alarms.last_uid}:{self.alarm_id}"
             alarms.alarms[self.alarm_id] = self
         else:
             # The alarm has been saved before. Update it instead.
