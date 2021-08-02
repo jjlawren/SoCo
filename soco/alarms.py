@@ -2,11 +2,10 @@
 
 import logging
 import re
-import weakref
 from datetime import datetime
 
 from . import discovery
-from .core import PLAY_MODES
+from .core import _SocoSingletonBase, PLAY_MODES
 from .exceptions import SoCoException
 from .xml import XML
 
@@ -49,11 +48,44 @@ def is_valid_recurrence(text):
     return re.search(r"^ON_[0-6]{1,7}$", text) is not None
 
 
-class Alarms:
-    """A class representing all known Sonos Alarms."""
+class Alarms(_SocoSingletonBase):
+    """A class representing all known Sonos Alarms.
 
+    Is a singleton and every `Alarms()` object will return the same instance.
 
+    Example use:
 
+        >>> alarms = Alarms()
+        >>> alarms.update()
+        True
+        >>> alarms.update()
+        False
+        >>> alarms.alarms
+        {469: <Alarm id:469@22:07:41 at 0x7f5198797dc0>, 470: <Alarm id:470@22:07:46 at 0x7f5198797d60>}
+        >>> for alarm in alarms:
+        ...     alarm
+        ...
+        <Alarm id:469@22:07:41 at 0x7f5198797dc0>
+        <Alarm id:470@22:07:46 at 0x7f5198797d60>
+        >>> alarms[470]
+        <Alarm id:470@22:07:46 at 0x7f5198797d60>
+        >>> new_alarm = Alarm(zone)
+        >>> new_alarm.save()
+        471
+        >>> new_alarm.recurrence = "ONCE"
+        >>> new_alarm.save()
+        471
+        >>> alarms.alarms
+        {469: <Alarm id:469@22:07:41 at 0x7f5198797dc0>, 470: <Alarm id:470@22:07:46 at 0x7f5198797d60>, 471: <Alarm id:471@22:08:40 at 0x7f51987f1b50>}
+        >>> alarms[470].remove()
+        >>> alarms.alarms
+        {469: <Alarm id:469@22:07:41 at 0x7f5198797dc0>, 471: <Alarm id:471@22:08:40 at 0x7f51987f1b50>}
+        >>> for alarm in alarms:
+        ...     alarm.remove()
+        ...
+        >>> a.alarms
+        {}
+    """  # noqa: E501
 
     def __init__(self):
         self.alarms: dict[int, Alarm] = {}
@@ -75,8 +107,21 @@ class Alarms:
         return self.alarms.get(alarm_id)
 
     def __iter__(self):
-        for alarm in self.alarms.values():
+        for alarm in list(self.alarms.values()):
             yield alarm
+
+    def remove_by_id(self, alarm_id):
+        """Remove an alarm using its identifier.
+
+        Returns:
+            bool: True if alarm is found and removed, False otherwise.
+        """
+        alarm = self.alarms.get(alarm_id)
+        if not alarm:
+            return False
+
+        alarm.remove()
+        return True
 
     def update(self, zone=None):
         """Update all alarms and current version.
@@ -86,6 +131,7 @@ class Alarms:
 
         Raises:
             SoCoException: If the `CurrentAlarmListVersion` value is unexpected.
+                May occur if the provided zone is from a different household.
         """
         if zone is None:
             zone = discovery.any_soco()
@@ -96,25 +142,38 @@ class Alarms:
         if self.last_alarm_list_version:
             alarm_list_uid, alarm_list_id = current_alarm_list_version.split(":")
             if self.last_uid != alarm_list_uid:
-                raise SoCoException(
-                    "Alarm list UID {} does not match {}".format(
-                        current_alarm_list_version, self.last_alarm_list_version
-                    )
+                matching_zone = next(
+                    (z for z in zone.all_zones if z.uid == alarm_list_uid), None
                 )
+                if not matching_zone:
+                    raise SoCoException(
+                        "Alarm list UID {} does not match {}".format(
+                            current_alarm_list_version, self.last_alarm_list_version
+                        )
+                    )
 
             if int(alarm_list_id) <= self.last_id:
-                log.debug(
-                    "Alarm list version %s is not newer than %s",
-                    alarm_list_id,
-                    self.last_id,
-                )
                 return False
 
         self.last_alarm_list_version = current_alarm_list_version
 
+        alarms_updated = False
         alarms = parse_alarm_payload(response, zone)
-        self.alarms = {alarm._alarm_id: alarm for alarm in alarms}
-        return True
+
+        # Replace Alarm objects if updated
+        for alarm in alarms:
+            if alarm != self.alarms.get(alarm._alarm_id):
+                self.alarms[alarm._alarm_id] = alarm
+                alarms_updated = True
+
+        # Prune alarms removed externally
+        for alarm_id in list(self.alarms):
+            match = next((a for a in alarms if a._alarm_id == alarm_id), None)
+            if not match:
+                self.alarms.pop(alarm_id)
+                alarms_updated = True
+
+        return alarms_updated
 
 
 class Alarm:
@@ -123,34 +182,9 @@ class Alarm:
 
     Alarms may be created or updated and saved to, or removed from the Sonos
     system. An alarm is not automatically saved. Call `save()` to do that.
-
-    Example:
-
-        >>> device = discovery.any_soco()
-        >>> # create an alarm with default properties
-        >>> alarm = Alarm(device)
-        >>> print alarm.volume
-        20
-        >>> print get_alarms()
-        set([])
-        >>> # save the alarm to the Sonos system
-        >>> alarm.save()
-        >>> print get_alarms()
-        set([<Alarm id:88@15:26:15 at 0x107abb090>])
-        >>> # update the alarm
-        >>> alarm.recurrence = "ONCE"
-        >>> # Save it again for the change to take effect
-        >>> alarm.save()
-        >>> # Remove it
-        >>> alarm.remove()
-        >>> print get_alarms()
-        set([])
     """
 
     # pylint: disable=too-many-instance-attributes
-
-    _all_alarms = weakref.WeakValueDictionary()
-
     # pylint: disable=too-many-arguments
     def __init__(
         self,
@@ -196,25 +230,17 @@ class Alarm:
                 otherwise. Defaults to `False`.
         """
 
-        super().__init__()
         self.zone = zone
         if start_time is None:
-            start_time = datetime.now().time()
-        #: `datetime.time`: The alarm's start time.
+            start_time = datetime.now().time().replace(microsecond=0)
         self.start_time = start_time
-        #: `datetime.time`: The alarm's duration.
         self.duration = duration
         self._recurrence = recurrence
-        #: `bool`: `True` if the alarm is enabled, else `False`.
         self.enabled = enabled
-        #:
         self.program_uri = program_uri
-        #: `str`: The uri to play.
         self.program_metadata = program_metadata
         self._play_mode = play_mode
         self._volume = volume
-        #: `bool`: `True` if the alarm should be played on the other speakers
-        #: in the same group, `False` otherwise.
         self.include_linked_zones = include_linked_zones
         self._alarm_id = None
 
@@ -223,6 +249,27 @@ class Alarm:
         return "<{} id:{}@{} at {}>".format(
             self.__class__.__name__, self._alarm_id, middle, hex(id(self))
         )
+
+    def __eq__(self, other):
+        if not isinstance(other, Alarm):
+            return NotImplemented
+
+        for attr in [
+            "_alarm_id",
+            "enabled",
+            "duration",
+            "include_linked_zones",
+            "play_mode",
+            "program_uri",
+            "program_metadata",
+            "recurrence",
+            "start_time",
+            "volume",
+            "zone",
+        ]:
+            if getattr(self, attr) != getattr(other, attr):
+                return False
+        return True
 
     @property
     def play_mode(self):
@@ -305,8 +352,9 @@ class Alarm:
         ]
         if self._alarm_id is None:
             response = self.zone.alarmClock.CreateAlarm(args)
-            self._alarm_id = response["AssignedID"]
-            Alarm._all_alarms[self._alarm_id] = self
+            self._alarm_id = int(response["AssignedID"])
+            alarms = Alarms()
+            alarms.alarms[self._alarm_id] = self
         else:
             # The alarm has been saved before. Update it instead.
             args.insert(0, ("ID", self._alarm_id))
@@ -320,11 +368,8 @@ class Alarm:
         and can be saved back to Sonos again if desired.
         """
         self.zone.alarmClock.DestroyAlarm([("ID", self._alarm_id)])
-        alarm_id = self._alarm_id
-        try:
-            del Alarm._all_alarms[alarm_id]
-        except KeyError:
-            pass
+        alarms = Alarms()
+        alarms.alarms.pop(self._alarm_id, None)
         self._alarm_id = None
 
     @property
@@ -334,24 +379,18 @@ class Alarm:
 
 
 def get_alarms(zone=None):
-    """Get a set of all alarms known to the Sonos system.
+    """Get a list of all alarms known to the Sonos system.
 
     Args:
         zone (soco.SoCo, optional): a SoCo instance to query. If None, a random
             instance is used. Defaults to `None`.
 
     Returns:
-        set: A set of `Alarm` instances
-
-    Note:
-        This method is deprecated.
+        list: A list of `Alarm` instances
     """
-    log.warning("get_alarms() is deprecated and should be replaced with a persistent `Alarms` instance")
-    if zone is None:
-        zone = discovery.any_soco()
     alarms = Alarms()
     alarms.update(zone)
-    return set(alarms.alarms.values())
+    return list(alarms.alarms.values())
 
 
 def remove_alarm_by_id(zone, alarm_id):
@@ -365,19 +404,15 @@ def remove_alarm_by_id(zone, alarm_id):
     Returns:
         bool: `True` if the alarm is found and removed, `False` otherwise.
     """
-    alarms = get_alarms(zone)
-    for alarm in alarms:
-        if alarm.alarm_id == alarm_id:
-            alarm.remove()
-            return True
-
-    return False
+    log.warning(
+        "remove_alarm_by_id() is deprecated and replaced by `Alarms.remove_by_id()`"
+    )
+    alarms = Alarms()
+    return alarms.remove_by_id(alarm_id)
 
 
 def parse_alarm_payload(payload, zone):
-    """Parse the XML payload response and return a set of `Alarm` instances."""
-    new_alarms = set()
-
+    """Parse the XML payload response and return a list of `Alarm` instances."""
     alarm_list = payload["CurrentAlarmList"]
     tree = XML.fromstring(alarm_list.encode("utf-8"))
 
@@ -398,41 +433,41 @@ def parse_alarm_payload(payload, zone):
     # </Alarms>
 
     alarms = tree.findall("Alarm")
-
+    result = []
     for alarm in alarms:
         values = alarm.attrib
         alarm_id = int(values["ID"])
 
-        new_alarm = Alarm(None)
-        new_alarm._alarm_id = alarm_id
+        instance = Alarm(None)
+        instance._alarm_id = alarm_id
 
-        new_alarm.zone = next(
+        instance.zone = next(
             (z for z in zone.all_zones if z.uid == values["RoomUUID"]), None
         )
         # some alarms are not associated to zones -> filter these out
-        if new_alarm.zone is None:
+        if instance.zone is None:
             continue
 
-        new_alarm.start_time = datetime.strptime(
+        instance.start_time = datetime.strptime(
             values["StartTime"], "%H:%M:%S"
         ).time()  # NB StartTime, not
         # StartLocalTime, which is used by CreateAlarm
-        new_alarm.duration = (
+        instance.duration = (
             None
             if values["Duration"] == ""
             else datetime.strptime(values["Duration"], "%H:%M:%S").time()
         )
-        new_alarm.recurrence = values["Recurrence"]
-        new_alarm.enabled = values["Enabled"] == "1"
-        new_alarm.program_uri = (
+        instance.recurrence = values["Recurrence"]
+        instance.enabled = values["Enabled"] == "1"
+        instance.program_uri = (
             None
             if values["ProgramURI"] == "x-rincon-buzzer:0"
             else values["ProgramURI"]
         )
-        new_alarm.program_metadata = values["ProgramMetaData"]
-        new_alarm.play_mode = values["PlayMode"]
-        new_alarm.volume = values["Volume"]
-        new_alarm.include_linked_zones = values["IncludeLinkedZones"] == "1"
-        new_alarms.add(new_alarm)
+        instance.program_metadata = values["ProgramMetaData"]
+        instance.play_mode = values["PlayMode"]
+        instance.volume = values["Volume"]
+        instance.include_linked_zones = values["IncludeLinkedZones"] == "1"
 
-    return new_alarms
+        result.append(instance)
+    return result
