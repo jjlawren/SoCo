@@ -57,6 +57,9 @@ class Alarms(_SocoSingletonBase):
 
     Example use:
 
+        >>> get_alarms()
+        {469: <Alarm id:469@22:07:41 at 0x7f5198797dc0>,
+         470: <Alarm id:470@22:07:46 at 0x7f5198797d60>}
         >>> alarms = Alarms()
         >>> alarms.update()
         >>> alarms.alarms
@@ -130,9 +133,7 @@ class Alarms(_SocoSingletonBase):
         alarm = self.alarms.get(alarm_id)
         if not alarm:
             return False
-
-        alarm.remove()
-        return True
+        return alarm.remove()
 
     def update(self, zone: SoCo | None = None) -> None:
         """Update all alarms and current alarm list version.
