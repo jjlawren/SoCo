@@ -239,6 +239,7 @@ class Alarm:
                 otherwise. Defaults to `False`.
         """
 
+        self.alarm_id: int | None = None
         self.zone = zone
         if start_time is None:
             start_time = datetime.now().time().replace(microsecond=0)
@@ -251,7 +252,6 @@ class Alarm:
         self._play_mode = play_mode
         self._volume = volume
         self.include_linked_zones = include_linked_zones
-        self.alarm_id = None
 
     def update(self, **kwargs) -> None:
         """Update an existing Alarm instance using the same arguments as __init__."""
